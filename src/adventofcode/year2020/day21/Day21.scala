@@ -1,5 +1,6 @@
 package adventofcode.year2020.day21
 
+import scala.annotation.tailrec
 import scala.collection.SortedSet
 import scala.io.Source
 
@@ -61,7 +62,7 @@ object Day21 {
 
     //seperate allergens that have only one ingredient from allergens that have multiple ingredients
     // then remove the seperated ingredients from the allergens that have those ingredients.. repeat till no more allergens left
-    val finalAllergenIngredients = cull(possibleIngredientAllergen)
+    val finalAllergenIngredients = cull(Map.empty[Allergen,Ingredient], possibleIngredientAllergen)
     println(finalAllergenIngredients.map(ai => s"${ai._1} -> ${ai._2}").mkString("\n"))
 
     val badIngredients = finalAllergenIngredients.map(_._2).toSet
@@ -71,9 +72,10 @@ object Day21 {
     println(finalAllergenIngredients.toSeq.sortBy(_._1).map(_._2).mkString(","))
   }
 
-  def cull(allergenToIngredients: Map[Day21.Allergen, Set[Day21.Ingredient]]): Map[Allergen, Ingredient] = {
+  @tailrec
+  def cull(resolved: Map[Allergen, Ingredient], allergenToIngredients: Map[Day21.Allergen, Set[Day21.Ingredient]]): Map[Allergen, Ingredient] = {
     if(allergenToIngredients.isEmpty) {
-      Map.empty[Allergen, Ingredient]
+      resolved
     } else {
       val singleIngredientAllergens = allergenToIngredients.filter(_._2.size == 1).map(ai => ai._1 -> ai._2.head)
       if(singleIngredientAllergens.isEmpty) {
@@ -81,7 +83,7 @@ object Day21 {
       }
       val resolvedIngredients = singleIngredientAllergens.map(_._2).toSet
       val remainingAllergens = allergenToIngredients.filter(_._2.size > 1).mapValues(_.filter(!resolvedIngredients.contains(_)))
-      singleIngredientAllergens ++ cull(remainingAllergens)
+      cull(resolved ++ singleIngredientAllergens, remainingAllergens)
     }
 
   }
