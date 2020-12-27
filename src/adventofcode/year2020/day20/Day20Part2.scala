@@ -14,13 +14,9 @@ object Day20Part2 {
       }
     })
       .map(parseTile(_))
-    val grid = new Grid(tiles)
-    while(!grid.isComplete) {
-      println(grid.renderTileNum())
-      grid.next()
-      println
-    }
-    println(grid.renderTileNum())
+    val grid =  Grid(tiles)
+
+    println(grid.render())
   }
   def parseTile(lines: Seq[String]): Tile = {
     val hdrFormat = """Tile (\d*):""".r
@@ -97,12 +93,7 @@ class Tile(val tileNum: Int, val lines: Seq[String]) {
       case _ => None
     }
   }
-//  def mutations() : Set[Tile] = {
-//    val rotations = (1 to 3).scanLeft(this)((a,_) => a.rotate90)
-//    rotations.flatMap(t => {
-//      Seq(t, t.flipHoriz, t.flipVert, t.flipVert.flipHoriz)
-//    }).toSet
-//  }
+
 }
 
 
@@ -110,80 +101,120 @@ object Tile {
   def apply(tileNum: Int, lines: Seq[String]): Tile = new Tile(tileNum, lines)
 }
 
-class Grid(tiles:Seq[Tile]) {
-  val cellSize = tiles.head.height
-  val size = Math.sqrt(tiles.size).toInt
-  var unarrangedTiles = tiles.tail.map(t => t.tileNum -> t).toMap
-  var arrangedTiles = Map((0,0) -> tiles.head)
-  var incompleteTiles = Seq((0,0, tiles.head))
-
-  def nextIncomplete = incompleteTiles.head
-  def isComplete = incompleteTiles.isEmpty
+class Grid(lines:IndexedSeq[String]) {
 
 
-  def next() = {
-    val (incompleteX, incompleteY, incompleteTile) = nextIncomplete
-    val found = unarrangedTiles.values.map(incompleteTile.matchOther(_)).flatMap(_.map(Seq(_)).getOrElse(Seq.empty))
-//    val allMutations = unarrangedTiles.values.flatMap({
-//      _.mutations().map(m => m.tileNum -> m)
-//    })
-//    val offsets = Seq((0,-1), (-1,0), (0,1), (1,0))
-//    val found = incompleteTile.edges.map(e => {
-//      allMutations.filter(a=> a._2.edges.contains(e)).headOption
-//    }).zip(offsets)
+  val size = lines(0).length
 
-    //add all the found tiles to arranged tiles
-    arrangedTiles = found.foldLeft(arrangedTiles)((acc, f) => {
-      val(foundTile, xOffset, yOffset) = f
-      val coords = (incompleteX+xOffset, incompleteY+yOffset)
-      val present = acc.get(coords)
-      if(present.isDefined) {
+  def render() = lines.mkString("\n")
 
-        throw new Exception(s"${coords} already contains ${present.get.tileNum}\n${incompleteTile.tileNum} trying to replace it with ${foundTile.tileNum}")
+  def rotate90 : Grid = {
+    new Grid((0 until size).map({col =>
+      (0 until size).map ({n =>
+        val row = size-1-n
+        lines(row)(col)
+      }).mkString
+    }))
+  }
+  def rotate180 = rotate90.rotate90
+  def rotate270 = rotate180.rotate90
+
+  lazy val flipHoriz = new Grid(lines.reverse)
+  lazy val flipVert = new Grid(lines.map(_.reverse))
+
+
+}
+
+object Grid {
+  def apply(tiles:Seq[Tile]): Grid = {
+    val cells : IndexedSeq[String] = {
+      val cellSize = tiles.head.height
+      val tileWidth = Math.sqrt(tiles.size).toInt
+      val cornerTiles = {
+        val allEdges = tiles.flatMap(tile => Seq(tile.top, tile.left, tile.bottom, tile.right, tile.topreverse, tile.bottomreverse, tile.leftreverse, tile.rightreverse))
+        tiles.map(t => t -> Seq(t.top, t.left, t.right, t.bottom)).toMap
+          .mapValues(edges => edges.map(edge => allEdges.filter(edge == _).size))
+          .filter(_._2.sum == 6)
+          .map(t => {
+            val (tile, edgeCount) = t
+            edgeCount match {
+              case Seq(1, 1, _, _) => tile
+              case Seq(_, 1, _, 1) => tile.rotate90
+              case Seq(_, _, 1, 1) => tile.rotate180
+              case Seq(1, _, 1, _) => tile.rotate270
+              case _ => throw new Exception(s"Corner tile ${tile.tileNum} is crazy")
+            }
+          }).toSeq
       }
-      acc.updated(coords, foundTile)
-    })
-    // remove found tiles from unarranged tiles
-    unarrangedTiles = found.foldLeft(unarrangedTiles)((acc, f) => {
-      val(foundTile, _, _) = f
-      acc.filter( _._1!=foundTile.tileNum)
-    })
-    //remove current tile from incomplete tiles
-    incompleteTiles = incompleteTiles.filter(i => i._3.tileNum!=incompleteTile.tileNum)
-    //add found tiles to incomplete tiles
-    incompleteTiles = found.foldLeft(incompleteTiles)((acc, f) => {
-      val(foundTile, xOffset, yOffset) = f
-      acc :+ (incompleteX+xOffset, incompleteY+yOffset, foundTile)
-    })
-    println
-  }
+      var unarrangedTiles = tiles.filter(cornerTiles(0).tileNum != _.tileNum).map(t => t.tileNum -> t).toMap
+      var arrangedTiles = Map((0, 0) -> cornerTiles(0))
+      var incompleteTiles = Seq((0, 0, cornerTiles(0)))
 
-  def tile(x: Int, y: Int) = arrangedTiles.get(x, y)
-  def tileNum(x:Int, y:Int) = arrangedTiles.get((x,y)).map(_.tileNum.toString).getOrElse("    ")
-  def line(x: Int, y: Int, line: Int) = {
-    tile(x, y).map(t => t.line(line)).getOrElse(Seq.fill(cellSize)(" ").mkString)
-  }
+      def nextIncomplete = incompleteTiles.head
 
-  def renderTileNum() = {
-    val minx = arrangedTiles.keys.map(_._1).min
-    val maxx = arrangedTiles.keys.map(_._1).max
-    val miny = arrangedTiles.keys.map(_._2).min
-    val maxy = arrangedTiles.keys.map(_._2).max
-    (miny to maxy).map(y => (minx to maxx).map(x => tileNum(x, y)).mkString("|")).mkString("\n")
-  }
-  def render() = {
-    val minx = arrangedTiles.keys.map(_._1).min
-    val maxx = arrangedTiles.keys.map(_._1).max
-    val miny = arrangedTiles.keys.map(_._2).min
-    val maxy = arrangedTiles.keys.map(_._2).max
-    (for {y <- (miny to maxy); lineNum <- (0 until cellSize)} yield (y, lineNum))
-      .map(yl => {
-        val (y, lineNum) = yl
-        (minx to maxx).map(x => line(x, y, lineNum)).reduce((acc, l) => acc.slice(0, acc.length-1)+l)
-      }).mkString("\n")
-  }
+      def isComplete = incompleteTiles.isEmpty
+
+      def next = {
+        val (incompleteX, incompleteY, incompleteTile) = nextIncomplete
+        val found = unarrangedTiles.values.map(incompleteTile.matchOther(_)).flatMap(_.map(Seq(_)).getOrElse(Seq.empty))
+
+        //add all the found tiles to arranged tiles
+        arrangedTiles = found.foldLeft(arrangedTiles)((acc, f) => {
+          val (foundTile, xOffset, yOffset) = f
+          val coords = (incompleteX + xOffset, incompleteY + yOffset)
+          val present = acc.get(coords)
+          if (present.isDefined) {
+
+            throw new Exception(s"${coords} already contains ${present.get.tileNum}\n${incompleteTile.tileNum} trying to replace it with ${foundTile.tileNum}")
+          }
+          acc.updated(coords, foundTile)
+        })
+        // remove found tiles from unarranged tiles
+        unarrangedTiles = found.foldLeft(unarrangedTiles)((acc, f) => {
+          val (foundTile, _, _) = f
+          acc.filter(_._1 != foundTile.tileNum)
+        })
+        //remove current tile from incomplete tiles
+        incompleteTiles = incompleteTiles.filter(i => i._3.tileNum != incompleteTile.tileNum)
+        //add found tiles to incomplete tiles
+        incompleteTiles = found.foldLeft(incompleteTiles)((acc, f) => {
+          val (foundTile, xOffset, yOffset) = f
+          acc :+ (incompleteX + xOffset, incompleteY + yOffset, foundTile)
+        })
+        println
+      }
+
+      def tile(x: Int, y: Int) = arrangedTiles.get(x, y)
+
+      def tileNum(x: Int, y: Int) = arrangedTiles.get((x, y)).map(_.tileNum.toString).getOrElse("    ")
+
+      def line(x: Int, y: Int, line: Int) = {
+        tile(x, y).map(t => t.line(line)).getOrElse(Seq.fill(cellSize)(" ").mkString)
+      }
 
 
+      def assemble(): IndexedSeq[String] = {
+        val headLine = (0 to tileWidth).map(x => line(x, 0, 0)).reduce((acc, l) => acc.slice(0, acc.length - 1) + l)
+        val tailLine = (for {y <- (0 to tileWidth); lineNum <- (1 until cellSize)} yield (y, lineNum))
+          .map(yl => {
+            val (y, lineNum) = yl
+            (0 to tileWidth).map(x => line(x, y, lineNum)).reduce((acc, l) => acc.slice(0, acc.length - 1) + l)
+          })
+
+        headLine +: tailLine
+      }
+      def renderTileNum = {
+        (0 to tileWidth).map(y => (0 to tileWidth).map(x => tileNum(x, y)).mkString("|")).mkString("\n")
+      }
+      while (!isComplete) {
+        next
+        println(renderTileNum)
+        println
+      }
+      assemble()
+    }
+    new Grid(cells)
+  }
 }
 
 
