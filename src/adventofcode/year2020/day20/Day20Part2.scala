@@ -1,6 +1,7 @@
 package adventofcode.year2020.day20
 
 import scala.io.Source
+import scala.util.matching.Regex
 
 object Day20Part2 {
   def main(args: Array[String]): Unit = {
@@ -16,7 +17,12 @@ object Day20Part2 {
       .map(parseTile(_))
     val grid =  Grid(tiles)
 
-    println(grid.render())
+    val allGrids =  (1 to 3).scanLeft(grid)((g, _) => g.rotate90) ++ (1 to 3).scanLeft(grid.flipHoriz)((g, _) => g.rotate90)
+//    allGrids.foreach(g => {
+//      println(g.render())
+//      println
+//    })
+    println(allGrids.map(_.numWaves).min)
   }
   def parseTile(lines: Seq[String]): Tile = {
     val hdrFormat = """Tile (\d*):""".r
@@ -94,6 +100,12 @@ class Tile(val tileNum: Int, val lines: Seq[String]) {
     }
   }
 
+  def removeBorder() : Tile = {
+    val linesWithoutBorders = lines.slice(1, lines.length-1).map(line => line.slice(1, line.length-1))
+    new Tile(tileNum, linesWithoutBorders)
+  }
+
+
 }
 
 
@@ -101,51 +113,76 @@ object Tile {
   def apply(tileNum: Int, lines: Seq[String]): Tile = new Tile(tileNum, lines)
 }
 
-class Grid(lines:IndexedSeq[String]) {
+class Grid(_lines:IndexedSeq[String]) {
 
-
+  val lines = _lines
   val size = lines(0).length
+  val numWaves = lines.mkString.toCharArray.filter(_=='#').size - seaMonsterWaves()
 
   def render() = lines.mkString("\n")
+
+  def seaMonsterWaves() : Int = {
+    //TODO
+    // slice the grid vertically into sliding window of legth of the monster
+    val vertSlices = slidingVertSlices(_lines, Grid.seaMonsterPattern(0).length)
+    // now slice each vertical slice horizontally into the highet of the monster
+    // this gives us the entire grid broken into monster sized windows
+    val windows = vertSlices.flatMap(vs => {
+      val window = slidingHorizSlices(vs._2, Grid.seaMonsterPattern.length)
+      window.map(w => (vs._1, w._1, w._2))
+    })
+    // now we have all the windows, check each window for monster
+
+    val tharMonster = windows.filter(window => {
+      val (x, y, windowLines) = window
+      windowLines.zip(Grid.seaMonsterPatternRegex)// pair up each line with the regex to me matches
+        .map(linePattern => !linePattern._2.findAllMatchIn(linePattern._1).isEmpty) // match the pattern agains the line
+        .reduce(_ && _) // return true if all lines matches with the respective pattern
+    })
+    tharMonster.size * Grid.eachSeaMonsterWaves
+  }
+
+  private def slidingHorizSlices(strings: IndexedSeq[String], windowSize: Int) : Seq[(Int, IndexedSeq[String])] = {
+    strings.sliding(windowSize).toSeq.zipWithIndex.map(w => (w._2, w._1))
+  }
+  private def slidingVertSlices(strs: IndexedSeq[String], windowSize: Int) : Seq[(Int, IndexedSeq[String])] = {
+    (0 until strs(0).length-windowSize).map(start =>
+      (start, strs.map(_.slice(start, start+windowSize)))
+    )
+  }
+
+
 
   def rotate90 : Grid = {
     new Grid((0 until size).map({col =>
       (0 until size).map ({n =>
         val row = size-1-n
-        lines(row)(col)
+        _lines(row)(col)
       }).mkString
     }))
   }
   def rotate180 = rotate90.rotate90
   def rotate270 = rotate180.rotate90
 
-  lazy val flipHoriz = new Grid(lines.reverse)
-  lazy val flipVert = new Grid(lines.map(_.reverse))
+  lazy val flipHoriz = new Grid(_lines.reverse)
+  lazy val flipVert = new Grid(_lines.map(_.reverse))
+
 
 
 }
 
 object Grid {
+  val seaMonsterPattern = Seq("                  # ",
+                              "#    ##    ##    ###",
+                              " #  #  #  #  #  #   "
+  )
+  val seaMonsterPatternRegex = seaMonsterPattern.map(_.replaceAll(" ", "[#\\.]").r)
+  val eachSeaMonsterWaves = seaMonsterPattern.mkString.toCharArray.filter(_=='#').size
   def apply(tiles:Seq[Tile]): Grid = {
     val cells : IndexedSeq[String] = {
       val cellSize = tiles.head.height
       val tileWidth = Math.sqrt(tiles.size).toInt
-      val cornerTiles = {
-        val allEdges = tiles.flatMap(tile => Seq(tile.top, tile.left, tile.bottom, tile.right, tile.topreverse, tile.bottomreverse, tile.leftreverse, tile.rightreverse))
-        tiles.map(t => t -> Seq(t.top, t.left, t.right, t.bottom)).toMap
-          .mapValues(edges => edges.map(edge => allEdges.filter(edge == _).size))
-          .filter(_._2.sum == 6)
-          .map(t => {
-            val (tile, edgeCount) = t
-            edgeCount match {
-              case Seq(1, 1, _, _) => tile
-              case Seq(_, 1, _, 1) => tile.rotate90
-              case Seq(_, _, 1, 1) => tile.rotate180
-              case Seq(1, _, 1, _) => tile.rotate270
-              case _ => throw new Exception(s"Corner tile ${tile.tileNum} is crazy")
-            }
-          }).toSeq
-      }
+      val cornerTiles = corners(tiles)
       var unarrangedTiles = tiles.filter(cornerTiles(0).tileNum != _.tileNum).map(t => t.tileNum -> t).toMap
       var arrangedTiles = Map((0, 0) -> cornerTiles(0))
       var incompleteTiles = Seq((0, 0, cornerTiles(0)))
@@ -181,7 +218,7 @@ object Grid {
           val (foundTile, xOffset, yOffset) = f
           acc :+ (incompleteX + xOffset, incompleteY + yOffset, foundTile)
         })
-        println
+        //println
       }
 
       def tile(x: Int, y: Int) = arrangedTiles.get(x, y)
@@ -194,26 +231,43 @@ object Grid {
 
 
       def assemble(): IndexedSeq[String] = {
-        val headLine = (0 to tileWidth).map(x => line(x, 0, 0)).reduce((acc, l) => acc.slice(0, acc.length - 1) + l)
-        val tailLine = (for {y <- (0 to tileWidth); lineNum <- (1 until cellSize)} yield (y, lineNum))
-          .map(yl => {
-            val (y, lineNum) = yl
-            (0 to tileWidth).map(x => line(x, y, lineNum)).reduce((acc, l) => acc.slice(0, acc.length - 1) + l)
-          })
-
-        headLine +: tailLine
+        //remove borders of each tile
+        val tilesWithoutBorders = arrangedTiles.mapValues(tile => tile.removeBorder())
+        (for {y <- (0 until tileWidth); lineNum <- (0 until cellSize-2)} yield(y, lineNum)).map(yl => {
+          val (y, lineNum) = yl
+          (0 until tileWidth).map(x => tilesWithoutBorders(x, y).lines(lineNum)).mkString
+        })
       }
       def renderTileNum = {
         (0 to tileWidth).map(y => (0 to tileWidth).map(x => tileNum(x, y)).mkString("|")).mkString("\n")
       }
       while (!isComplete) {
         next
-        println(renderTileNum)
-        println
+//        println(renderTileNum)
+//        println
       }
       assemble()
     }
     new Grid(cells)
+  }
+
+  private def corners(tiles: Seq[Tile]) = {
+
+    val allEdges = tiles.flatMap(tile => Seq(tile.top, tile.left, tile.bottom, tile.right, tile.topreverse, tile.bottomreverse, tile.leftreverse, tile.rightreverse))
+    tiles.map(t => t -> Seq(t.top, t.left, t.right, t.bottom)).toMap
+      .mapValues(edges => edges.map(edge => allEdges.filter(edge == _).size))
+      .filter(_._2.sum == 6)
+      .map(t => {
+        val (tile, edgeCount) = t
+        edgeCount match {
+          case Seq(1, 1, _, _) => tile
+          case Seq(_, 1, _, 1) => tile.rotate90
+          case Seq(_, _, 1, 1) => tile.rotate180
+          case Seq(1, _, 1, _) => tile.rotate270
+          case _ => throw new Exception(s"Corner tile ${tile.tileNum} is crazy")
+        }
+      }).toSeq
+
   }
 }
 
