@@ -1,5 +1,5 @@
 cabal-version:      2.4
-name:               day9
+name:               day11
 version:            0.1.0.0
 
 -- A short (one-line) description of the package.
@@ -21,7 +21,7 @@ maintainer:         jlalwani@amazon.com
 -- category:
 extra-source-files: CHANGELOG.md
 
-executable day9
+executable day11
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
@@ -31,7 +31,6 @@ executable day9
     -- other-extensions:
     build-depends:    base ^>=4.14.3.0,
                       array ^>=0.5.4.0,
-                      containers ^>=0.6.5.1,
-                      Unique ^>=0.4.7.9
+                      containers ^>=0.6.5.1
     hs-source-dirs:   app
     default-language: Haskell2010
